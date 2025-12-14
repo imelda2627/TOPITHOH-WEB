@@ -654,7 +654,7 @@ const App: React.FC = () => {
             />
           )}
           {activeTab === 'history' && (
-            <PatientHistory medicalRecords={medicalRecords} />
+            <PatientHistory records={medicalRecords} />
           )}
           {activeTab === 'access' && (
             <PatientAccess token={token || ''} />

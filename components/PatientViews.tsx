@@ -75,12 +75,15 @@ interface HistoryProps {
 export const PatientHistory: React.FC<HistoryProps> = ({ records }) => {
   const [filter, setFilter] = useState<string>('All');
 
-  const filteredRecords = filter === 'All' 
-    ? records 
-    : records.filter(r => r.record_type === filter);
+  // Ensure records is always an array
+  const safeRecords = records || [];
+
+  const filteredRecords = filter === 'All'
+    ? safeRecords
+    : safeRecords.filter(r => r.record_type === filter);
 
   // Get unique types from records for filter
-  const uniqueTypes = Array.from(new Set(records.map(r => r.record_type)));
+  const uniqueTypes = Array.from(new Set(safeRecords.map(r => r.record_type)));
   const filters = ['All', ...uniqueTypes];
 
   return (

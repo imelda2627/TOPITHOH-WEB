@@ -18,6 +18,8 @@ export const Layout: React.FC<LayoutProps> = ({ children, userRole, onLogout, ac
 
   const getNavItems = () => {
     switch (userRole) {
+      case 'patient':
+      case 'user':
       case UserRole.PATIENT:
         return [
           { id: 'summary', icon: Home, label: 'Accueil' },
@@ -25,16 +27,19 @@ export const Layout: React.FC<LayoutProps> = ({ children, userRole, onLogout, ac
           { id: 'access', icon: Shield, label: 'Accès' },
           { id: 'profile', icon: User, label: 'Profil' },
         ];
+      case 'doctor':
       case UserRole.DOCTOR:
         return [
           { id: 'patients', icon: User, label: 'Patients' },
           { id: 'consultations', icon: Activity, label: 'Consults' },
         ];
+      case 'laboratory':
       case UserRole.LAB:
         return [
           { id: 'requests', icon: FileText, label: 'Demandes' },
           { id: 'results', icon: Activity, label: 'Résultats' },
         ];
+      case 'admin':
       case UserRole.ADMIN:
         return [
           { id: 'dashboard', icon: BarChart3, label: 'Dashboard' },
@@ -50,9 +55,9 @@ export const Layout: React.FC<LayoutProps> = ({ children, userRole, onLogout, ac
   
   // Dynamic header color based on role
   const getHeaderColor = () => {
-    if (userRole === UserRole.ADMIN) return 'bg-purple-600';
-    if (userRole === UserRole.DOCTOR) return 'bg-secondary';
-    if (userRole === UserRole.LAB) return 'bg-accent';
+    if (userRole === 'admin' || userRole === UserRole.ADMIN) return 'bg-purple-600';
+    if (userRole === 'doctor' || userRole === UserRole.DOCTOR) return 'bg-secondary';
+    if (userRole === 'laboratory' || userRole === UserRole.LAB) return 'bg-accent';
     return 'bg-primary';
   };
 
@@ -64,8 +69,8 @@ export const Layout: React.FC<LayoutProps> = ({ children, userRole, onLogout, ac
           <div>
             <h1 className="text-xl font-bold tracking-tight">TOHPITOH</h1>
             <p className="text-xs text-white/80">
-              {userRole === UserRole.ADMIN ? 'Administration Système' :
-               userRole === UserRole.PATIENT ? 'Mon Dossier Médical' : 'Espace Pro'}
+              {(userRole === 'admin' || userRole === UserRole.ADMIN) ? 'Administration Système' :
+               (userRole === 'patient' || userRole === 'user' || userRole === UserRole.PATIENT) ? 'Mon Dossier Médical' : 'Espace Pro'}
             </p>
           </div>
           <div className="flex items-center space-x-2">
@@ -102,8 +107,8 @@ export const Layout: React.FC<LayoutProps> = ({ children, userRole, onLogout, ac
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
-            const activeColor = userRole === UserRole.ADMIN ? 'text-purple-600 dark:text-purple-400' :
-                              userRole === UserRole.LAB ? 'text-emerald-600 dark:text-emerald-400' : 'text-primary dark:text-blue-400';
+            const activeColor = (userRole === 'admin' || userRole === UserRole.ADMIN) ? 'text-purple-600 dark:text-purple-400' :
+                              (userRole === 'laboratory' || userRole === UserRole.LAB) ? 'text-emerald-600 dark:text-emerald-400' : 'text-primary dark:text-blue-400';
 
             return (
               <button

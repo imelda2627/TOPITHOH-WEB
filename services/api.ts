@@ -77,19 +77,21 @@ export const api = {
             userData.role = userData.user_type;
         } else {
              // Default to 'user' if we can't determine, preventing undefined errors
-             userData.role = 'user'; 
+             userData.role = 'user';
         }
     }
 
     let patientData = undefined;
     // Fetch patient details ONLY for patient/user roles (not admin, doctor, laboratory)
+    // Only fetch if user has patient or user role
     if (userData.role === 'patient' || userData.role === 'user') {
         try {
             const patRes = await fetch(`${BASE_URL}/patients/profile`, {
                 headers: getHeaders(token)
             });
             if(patRes.ok) {
-                patientData = await patRes.json();
+                const data = await patRes.json();
+                patientData = data.data || data;
             }
         } catch (e) {
             // Silently fail - patient profile might not exist yet or endpoint not available
