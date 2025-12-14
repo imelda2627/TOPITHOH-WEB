@@ -1,0 +1,5 @@
+{
+  "name": "TOHPITOH - DEP Mobile",
+  "description": "Application mobile du Dossier Électronique du Patient (DEP). Permet la gestion sécurisée, le partage et la consultation des données médicales entre patients et professionnels de santé.",
+  "requestFramePermissions": []
+}

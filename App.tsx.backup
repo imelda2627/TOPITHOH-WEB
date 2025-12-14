@@ -1,0 +1,718 @@
+import React, { useState, useEffect } from 'react';
+import { UserRole, FullProfile, MedicalRecord, RegistrationPayload } from './types';
+import { Layout } from './components/Layout';
+import { PatientSummary, PatientHistory, PatientAccess, PatientProfileView } from './components/PatientViews';
+import { DoctorPatientList, DoctorConsultation } from './components/DoctorViews';
+import { AdminDashboard, AdminUsersList, AdminValidations } from './components/AdminViews';
+import { Activity, ShieldCheck, User as UserIcon, Lock, Loader2, Stethoscope, ChevronLeft, ArrowRight, ShieldAlert, Mail, Phone, Calendar, Hash, Building } from 'lucide-react';
+import { api } from './services/api';
+
+const App: React.FC = () => {
+  // Authentication State
+  const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
+  const [userProfile, setUserProfile] = useState<FullProfile | null>(null);
+  const [medicalRecords, setMedicalRecords] = useState<MedicalRecord[]>([]);
+
+  // Login/Register Flow State
+  const [authStep, setAuthStep] = useState<'role-selection' | 'login' | 'register'>('role-selection');
+  const [targetRole, setTargetRole] = useState<UserRole | null>(null);
+
+  // UI State
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string>('');
+  const [successMsg, setSuccessMsg] = useState<string>('');
+
+  // Navigation State
+  const [activeTab, setActiveTab] = useState('summary');
+  const [viewState, setViewState] = useState('list');
+
+  // Dark Mode State
+  const [darkMode, setDarkMode] = useState<boolean>(() => {
+    const saved = localStorage.getItem('darkMode');
+    if (saved !== null) {
+      return saved === 'true';
+    }
+    // Check system preference
+    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  });
+
+  // Login Form State
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+
+  // Register Form State
+  const [regData, setRegData] = useState({
+    firstName: '',
+    lastName: '',
+    phone: '',
+    dob: '',
+    gender: 'M',
+    licenseNumber: '',
+    specialty: '',
+    hospital: '',
+  });
+
+  // Dark Mode Effect
+  useEffect(() => {
+    if (darkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+    localStorage.setItem('darkMode', darkMode.toString());
+  }, [darkMode]);
+
+  // Initial Data Load
+  useEffect(() => {
+    if (token) {
+      loadUserData(token);
+    }
+  }, [token]);
+
+  const loadUserData = async (authToken: string) => {
+    setLoading(true);
+    try {
+      const profile = await api.getProfile(authToken);
+      setUserProfile(profile);
+      
+      const role = profile.user.role;
+      if (role === 'patient' || role === 'user') {
+         const records = await api.getMedicalRecords(authToken);
+         setMedicalRecords(records);
+         setActiveTab('summary');
+      } else if (role === 'admin') {
+         setActiveTab('dashboard');
+      } else if (role === 'doctor') {
+         setActiveTab('patients');
+      } else if (role === 'laboratory') {
+         setActiveTab('requests');
+      }
+
+    } catch (err) {
+      console.error(err);
+      setError('Impossible de charger le profil. Veuillez vous reconnecter.');
+      handleLogout();
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const selectRole = (role: UserRole) => {
+    setTargetRole(role);
+    setAuthStep('login');
+    setError('');
+    setSuccessMsg('');
+    setEmail('');
+    setPassword('');
+  };
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+    setSuccessMsg('');
+
+    try {
+      const data = await api.login(email, password);
+      // Support multiple token formats: Standard 'token', OAuth2 'accessToken', SimpleJWT 'access', DRF 'key'
+      const authToken = data.token || data.accessToken || data.access || data.key;
+      
+      if (authToken) {
+        let profile: FullProfile;
+
+        // OPTIMIZATION: Check if user data is returned directly in the Auth response
+        // This answers "Why profile instead of auth?" -> We use auth if it gives us the data.
+        const authUser = data.user || data.data || (data.role ? data : null);
+
+        if (authUser) {
+             // Normalization logic similar to api.getProfile
+             if (!authUser.role) {
+                if (authUser.is_superuser || authUser.is_staff) authUser.role = 'admin';
+                else if (authUser.user_type) authUser.role = authUser.user_type;
+                else authUser.role = 'user';
+             }
+             profile = { user: authUser };
+             // Note: We might miss the 'patient' specific object here if the auth endpoint doesn't return it,
+             // but we will fetch medical records which is the main thing.
+        } else {
+             // Fallback: Use the specific profile endpoint
+             profile = await api.getProfile(authToken);
+        }
+
+        const userRole = profile.user.role;
+        let roleValid = false;
+        
+        // Role Validation Logic
+        if (userRole === 'admin' && targetRole === UserRole.ADMIN) roleValid = true;
+        else if (targetRole === UserRole.PATIENT && (userRole === 'patient' || userRole === 'user')) roleValid = true;
+        else if (targetRole === UserRole.DOCTOR && userRole === 'doctor') roleValid = true;
+        else if (targetRole === UserRole.LAB && userRole === 'laboratory') roleValid = true;
+
+        if (!roleValid) {
+          throw new Error(`Ce compte n'est pas autorisé dans l'espace ${targetRole}. Rôle actuel: ${userRole}`);
+        }
+
+        localStorage.setItem('token', authToken);
+        setToken(authToken);
+        setUserProfile(profile);
+        
+        // Post-login routing
+        if (userRole === 'admin') setActiveTab('dashboard');
+        else if (userRole === 'patient' || userRole === 'user') {
+           const records = await api.getMedicalRecords(authToken);
+           setMedicalRecords(records);
+           setActiveTab('summary');
+        } else if (userRole === 'doctor') {
+            setActiveTab('patients');
+        } else if (userRole === 'laboratory') {
+            setActiveTab('requests');
+        }
+
+      } else {
+        throw new Error("Jeton d'authentification manquant dans la réponse.");
+      }
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || "Email ou mot de passe incorrect");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+
+    try {
+      const payload: RegistrationPayload = {
+        email,
+        password,
+        first_name: regData.firstName,
+        last_name: regData.lastName,
+        phone: regData.phone,
+        role: targetRole === UserRole.LAB ? 'laboratory' : targetRole === UserRole.DOCTOR ? 'doctor' : 'patient',
+      };
+
+      // Add role specific fields
+      if (targetRole === UserRole.PATIENT) {
+        payload.date_of_birth = regData.dob;
+        payload.gender = regData.gender;
+      } else if (targetRole === UserRole.DOCTOR) {
+        payload.license_number = regData.licenseNumber;
+        payload.specialty = regData.specialty;
+        payload.hospital = regData.hospital;
+      } else if (targetRole === UserRole.LAB) {
+        payload.license_number = regData.licenseNumber;
+      }
+
+      await api.register(payload);
+      setSuccessMsg("Compte créé avec succès ! Vous pouvez maintenant vous connecter.");
+      setAuthStep('login'); // Switch back to login
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || "Erreur lors de l'inscription.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    setToken(null);
+    setUserProfile(null);
+    setMedicalRecords([]);
+    setViewState('list');
+    setEmail('');
+    setPassword('');
+    setAuthStep('role-selection');
+    setTargetRole(null);
+  };
+
+  const toggleDarkMode = () => {
+    setDarkMode(!darkMode);
+  };
+
+  // --- RENDER UNAUTHENTICATED SCREENS ---
+  if (!token || !userProfile) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 dark:from-slate-900 dark:to-slate-800 flex flex-col items-center justify-center p-6 relative overflow-hidden transition-colors duration-300">
+        
+        {/* Dark Mode Toggle (Login Screen) */}
+        <button
+          onClick={toggleDarkMode}
+          className="absolute top-6 right-6 p-2 rounded-full bg-white dark:bg-slate-800 shadow-lg hover:shadow-xl transition-all z-20 border border-slate-200 dark:border-slate-700"
+          aria-label="Toggle dark mode"
+        >
+          {darkMode ? (
+            <svg className="w-6 h-6 text-yellow-500" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clipRule="evenodd" />
+            </svg>
+          ) : (
+            <svg className="w-6 h-6 text-slate-700" fill="currentColor" viewBox="0 0 20 20">
+              <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
+            </svg>
+          )}
+        </button>
+
+        {/* Decorative Background Elements */}
+        <div className="absolute top-0 left-0 w-64 h-64 bg-blue-100 dark:bg-blue-900/30 rounded-full mix-blend-multiply dark:mix-blend-lighten filter blur-3xl opacity-30 -translate-x-1/2 -translate-y-1/2"></div>
+        <div className="absolute bottom-0 right-0 w-64 h-64 bg-sky-100 dark:bg-sky-900/30 rounded-full mix-blend-multiply dark:mix-blend-lighten filter blur-3xl opacity-30 translate-x-1/2 translate-y-1/2"></div>
+
+        <div className="w-full max-w-md z-10">
+
+          {/* HEADER LOGO */}
+          <div className="text-center mb-6 animate-fade-in-up">
+            <div className="bg-white dark:bg-slate-800 p-3 w-16 h-16 rounded-2xl shadow-xl flex items-center justify-center mx-auto mb-3 border border-blue-50 dark:border-blue-900">
+              <Activity className="text-primary dark:text-blue-400" size={32} />
+            </div>
+            <h1 className="text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">TOHPITOH</h1>
+            <p className="text-slate-500 dark:text-slate-400 text-xs font-medium">Dossier Électronique du Patient</p>
+          </div>
+
+          {/* STEP 1: ROLE SELECTION */}
+          {authStep === 'role-selection' && (
+            <div className="space-y-3 animate-fade-in">
+              <p className="text-center text-slate-600 dark:text-slate-300 mb-4 font-medium">Veuillez sélectionner votre espace :</p>
+              
+              <button
+                onClick={() => selectRole(UserRole.PATIENT)}
+                className="w-full bg-white dark:bg-slate-800 p-4 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 hover:border-primary dark:hover:border-primary hover:shadow-md transition-all group flex items-center justify-between"
+              >
+                <div className="flex items-center space-x-4">
+                  <div className="w-10 h-10 rounded-full bg-blue-50 dark:bg-blue-900/50 text-blue-500 dark:text-blue-400 flex items-center justify-center group-hover:bg-blue-500 group-hover:text-white transition-colors">
+                    <UserIcon size={20} />
+                  </div>
+                  <div className="text-left">
+                    <h3 className="font-bold text-slate-800 dark:text-white group-hover:text-primary dark:group-hover:text-primary transition-colors">Patient</h3>
+                    <p className="text-[10px] text-slate-400 dark:text-slate-500">Accéder à mon dossier médical</p>
+                  </div>
+                </div>
+                <ArrowRight className="text-slate-300 dark:text-slate-600 group-hover:text-primary transition-colors" size={18} />
+              </button>
+
+              <button
+                onClick={() => selectRole(UserRole.DOCTOR)}
+                className="w-full bg-white dark:bg-slate-800 p-4 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 hover:border-secondary dark:hover:border-secondary hover:shadow-md transition-all group flex items-center justify-between"
+              >
+                <div className="flex items-center space-x-4">
+                  <div className="w-10 h-10 rounded-full bg-indigo-50 dark:bg-indigo-900/50 text-indigo-500 dark:text-indigo-400 flex items-center justify-center group-hover:bg-indigo-500 group-hover:text-white transition-colors">
+                    <Stethoscope size={20} />
+                  </div>
+                  <div className="text-left">
+                    <h3 className="font-bold text-slate-800 dark:text-white group-hover:text-secondary dark:group-hover:text-secondary transition-colors">Médecin</h3>
+                    <p className="text-[10px] text-slate-400 dark:text-slate-500">Gestion des patients et soins</p>
+                  </div>
+                </div>
+                <ArrowRight className="text-slate-300 dark:text-slate-600 group-hover:text-secondary transition-colors" size={18} />
+              </button>
+
+              <button
+                onClick={() => selectRole(UserRole.LAB)}
+                className="w-full bg-white dark:bg-slate-800 p-4 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 hover:border-accent dark:hover:border-accent hover:shadow-md transition-all group flex items-center justify-between"
+              >
+                <div className="flex items-center space-x-4">
+                  <div className="w-10 h-10 rounded-full bg-emerald-50 dark:bg-emerald-900/50 text-emerald-500 dark:text-emerald-400 flex items-center justify-center group-hover:bg-emerald-500 group-hover:text-white transition-colors">
+                    <ShieldCheck size={20} />
+                  </div>
+                  <div className="text-left">
+                    <h3 className="font-bold text-slate-800 dark:text-white group-hover:text-accent dark:group-hover:text-accent transition-colors">Laboratoire</h3>
+                    <p className="text-[10px] text-slate-400 dark:text-slate-500">Traitement des analyses</p>
+                  </div>
+                </div>
+                <ArrowRight className="text-slate-300 dark:text-slate-600 group-hover:text-accent transition-colors" size={18} />
+              </button>
+
+              <button
+                onClick={() => selectRole(UserRole.ADMIN)}
+                className="w-full bg-white dark:bg-slate-800 p-4 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 hover:border-purple-500 dark:hover:border-purple-500 hover:shadow-md transition-all group flex items-center justify-between"
+              >
+                <div className="flex items-center space-x-4">
+                  <div className="w-10 h-10 rounded-full bg-purple-50 dark:bg-purple-900/50 text-purple-500 dark:text-purple-400 flex items-center justify-center group-hover:bg-purple-500 group-hover:text-white transition-colors">
+                    <ShieldAlert size={20} />
+                  </div>
+                  <div className="text-left">
+                    <h3 className="font-bold text-slate-800 dark:text-white group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors">Admin</h3>
+                    <p className="text-[10px] text-slate-400 dark:text-slate-500">Administration Système</p>
+                  </div>
+                </div>
+                <ArrowRight className="text-slate-300 dark:text-slate-600 group-hover:text-purple-600 transition-colors" size={18} />
+              </button>
+            </div>
+          )}
+
+          {/* AUTH CONTAINER (LOGIN or REGISTER) */}
+          {(authStep === 'login' || authStep === 'register') && targetRole && (
+            <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-xl p-8 animate-slide-in relative border border-slate-50 dark:border-slate-700">
+              <button
+                onClick={() => {
+                  setAuthStep('role-selection');
+                  setError('');
+                  setSuccessMsg('');
+                }}
+                className="absolute top-6 left-6 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 transition"
+              >
+                <ChevronLeft size={24} />
+              </button>
+
+              <div className="text-center mb-6">
+                <h2 className="text-xl font-bold text-slate-800 dark:text-white">
+                  {targetRole === UserRole.PATIENT ? 'Espace Patient' :
+                   targetRole === UserRole.DOCTOR ? 'Espace Médecin' :
+                   targetRole === UserRole.LAB ? 'Espace Laboratoire' : 'Espace Admin'}
+                </h2>
+                <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
+                  {authStep === 'login' ? 'Connexion à votre compte' : 'Création de nouveau compte'}
+                </p>
+              </div>
+
+              {error && (
+                <div className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 p-3 rounded-lg text-xs text-center border border-red-100 dark:border-red-900/50 font-medium mb-4">
+                  {error}
+                </div>
+              )}
+
+              {successMsg && (
+                <div className="bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 p-3 rounded-lg text-xs text-center border border-green-100 dark:border-green-900/50 font-medium mb-4">
+                  {successMsg}
+                </div>
+              )}
+
+              {/* LOGIN FORM */}
+              {authStep === 'login' && (
+                <form onSubmit={handleLogin} className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Email</label>
+                    <div className="relative">
+                      <Mail className="absolute left-3 top-3 text-slate-400 dark:text-slate-500" size={18} />
+                      <input
+                          type="email"
+                          required
+                          value={email}
+                          onChange={(e) => setEmail(e.target.value)}
+                          className="w-full pl-10 pr-4 py-3 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary dark:focus:ring-blue-500 transition-all text-sm text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-600"
+                          placeholder="exemple@email.com"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Mot de passe</label>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-3 text-slate-400 dark:text-slate-500" size={18} />
+                      <input
+                          type="password"
+                          required
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          className="w-full pl-10 pr-4 py-3 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary dark:focus:ring-blue-500 transition-all text-sm text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-600"
+                          placeholder="••••••••"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="pt-2">
+                    <button 
+                      type="submit"
+                      disabled={loading}
+                      className={`w-full flex items-center justify-center p-4 rounded-xl font-bold text-white transition transform active:scale-95 shadow-lg disabled:opacity-70 disabled:scale-100 ${
+                        targetRole === UserRole.PATIENT ? 'bg-primary hover:bg-sky-600' :
+                        targetRole === UserRole.DOCTOR ? 'bg-secondary hover:bg-indigo-600' :
+                        targetRole === UserRole.LAB ? 'bg-accent hover:bg-emerald-600' :
+                        'bg-purple-600 hover:bg-purple-700'
+                      }`}
+                    >
+                      {loading ? <Loader2 className="animate-spin" /> : "Se Connecter"}
+                    </button>
+                  </div>
+                  
+                  {targetRole !== UserRole.ADMIN && (
+                    <div className="text-center mt-4 border-t border-slate-100 dark:border-slate-700 pt-4">
+                      <p className="text-xs text-slate-400 dark:text-slate-500">Nouveau sur TOHPITOH ?</p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                            setAuthStep('register');
+                            setError('');
+                            setSuccessMsg('');
+                        }}
+                        className="text-sm font-bold text-primary dark:text-blue-400 hover:underline mt-1"
+                      >
+                        Créer un compte
+                      </button>
+                    </div>
+                  )}
+                </form>
+              )}
+
+              {/* REGISTER FORM */}
+              {authStep === 'register' && (
+                <form onSubmit={handleRegister} className="space-y-3 max-h-[60vh] overflow-y-auto pr-1 scroll-smooth">
+                   {/* Common Fields */}
+                   <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Prénom</label>
+                        <input 
+                            type="text" required value={regData.firstName}
+                            onChange={(e) => setRegData({...regData, firstName: e.target.value})}
+                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Nom</label>
+                        <input 
+                            type="text" required value={regData.lastName}
+                            onChange={(e) => setRegData({...regData, lastName: e.target.value})}
+                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-sm"
+                        />
+                      </div>
+                   </div>
+
+                   <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Email</label>
+                      <input 
+                          type="email" required value={email}
+                          onChange={(e) => setEmail(e.target.value)}
+                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-sm"
+                      />
+                   </div>
+
+                   <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Mot de passe</label>
+                      <input 
+                          type="password" required value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-sm"
+                      />
+                   </div>
+                   
+                   <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Téléphone</label>
+                      <div className="relative">
+                        <Phone className="absolute left-3 top-2.5 text-slate-400" size={14} />
+                        <input 
+                            type="tel" required value={regData.phone}
+                            onChange={(e) => setRegData({...regData, phone: e.target.value})}
+                            className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-sm"
+                        />
+                      </div>
+                   </div>
+
+                   {/* PATIENT SPECIFIC */}
+                   {targetRole === UserRole.PATIENT && (
+                       <div className="bg-blue-50 p-3 rounded-lg border border-blue-100 space-y-3">
+                           <p className="text-[10px] font-bold text-blue-800 uppercase">Infos Patient</p>
+                           <div>
+                              <label className="block text-[10px] text-blue-700 mb-1">Date de Naissance</label>
+                              <div className="relative">
+                                <Calendar className="absolute left-3 top-2.5 text-blue-400" size={14} />
+                                <input 
+                                    type="date" required value={regData.dob}
+                                    onChange={(e) => setRegData({...regData, dob: e.target.value})}
+                                    className="w-full pl-8 pr-3 py-2 bg-white border border-blue-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400 text-sm"
+                                />
+                              </div>
+                           </div>
+                           <div>
+                              <label className="block text-[10px] text-blue-700 mb-1">Genre</label>
+                              <select 
+                                value={regData.gender}
+                                onChange={(e) => setRegData({...regData, gender: e.target.value})}
+                                className="w-full px-3 py-2 bg-white border border-blue-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400 text-sm"
+                              >
+                                <option value="M">Masculin</option>
+                                <option value="F">Féminin</option>
+                                <option value="O">Autre</option>
+                              </select>
+                           </div>
+                       </div>
+                   )}
+
+                   {/* DOCTOR SPECIFIC */}
+                   {targetRole === UserRole.DOCTOR && (
+                       <div className="bg-indigo-50 p-3 rounded-lg border border-indigo-100 space-y-3">
+                           <p className="text-[10px] font-bold text-indigo-800 uppercase">Infos Professionnelles</p>
+                           <div>
+                              <label className="block text-[10px] text-indigo-700 mb-1">Numéro de Licence</label>
+                              <div className="relative">
+                                <Hash className="absolute left-3 top-2.5 text-indigo-400" size={14} />
+                                <input 
+                                    type="text" required value={regData.licenseNumber}
+                                    onChange={(e) => setRegData({...regData, licenseNumber: e.target.value})}
+                                    className="w-full pl-8 pr-3 py-2 bg-white border border-indigo-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 text-sm"
+                                    placeholder="LIC-12345"
+                                />
+                              </div>
+                           </div>
+                           <div className="grid grid-cols-2 gap-2">
+                               <div>
+                                  <label className="block text-[10px] text-indigo-700 mb-1">Spécialité</label>
+                                  <input 
+                                      type="text" required value={regData.specialty}
+                                      onChange={(e) => setRegData({...regData, specialty: e.target.value})}
+                                      className="w-full px-3 py-2 bg-white border border-indigo-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 text-sm"
+                                  />
+                               </div>
+                               <div>
+                                  <label className="block text-[10px] text-indigo-700 mb-1">Hôpital/Clinique</label>
+                                  <input 
+                                      type="text" required value={regData.hospital}
+                                      onChange={(e) => setRegData({...regData, hospital: e.target.value})}
+                                      className="w-full px-3 py-2 bg-white border border-indigo-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 text-sm"
+                                  />
+                               </div>
+                           </div>
+                       </div>
+                   )}
+
+                   {/* LAB SPECIFIC */}
+                   {targetRole === UserRole.LAB && (
+                       <div className="bg-emerald-50 p-3 rounded-lg border border-emerald-100 space-y-3">
+                           <p className="text-[10px] font-bold text-emerald-800 uppercase">Infos Laboratoire</p>
+                           <div>
+                              <label className="block text-[10px] text-emerald-700 mb-1">Numéro d'Accréditation</label>
+                              <div className="relative">
+                                <Hash className="absolute left-3 top-2.5 text-emerald-400" size={14} />
+                                <input 
+                                    type="text" required value={regData.licenseNumber}
+                                    onChange={(e) => setRegData({...regData, licenseNumber: e.target.value})}
+                                    className="w-full pl-8 pr-3 py-2 bg-white border border-emerald-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-400 text-sm"
+                                    placeholder="LAB-98765"
+                                />
+                              </div>
+                           </div>
+                       </div>
+                   )}
+
+                   <div className="pt-2">
+                      <button 
+                        type="submit"
+                        disabled={loading}
+                        className={`w-full flex items-center justify-center p-4 rounded-xl font-bold text-white transition transform active:scale-95 shadow-lg disabled:opacity-70 disabled:scale-100 ${
+                          targetRole === UserRole.PATIENT ? 'bg-primary hover:bg-sky-600' :
+                          targetRole === UserRole.DOCTOR ? 'bg-secondary hover:bg-indigo-600' :
+                          'bg-accent hover:bg-emerald-600'
+                        }`}
+                      >
+                        {loading ? <Loader2 className="animate-spin" /> : "S'inscrire"}
+                      </button>
+                      <button 
+                        type="button"
+                        onClick={() => setAuthStep('login')}
+                        className="w-full text-center text-xs text-gray-500 mt-3 hover:text-gray-800"
+                      >
+                        Annuler
+                      </button>
+                   </div>
+                </form>
+              )}
+            </div>
+          )}
+          
+          <div className="mt-8 text-center">
+            <p className="text-[10px] text-slate-400">
+              © 2024 TOHPITOH - Plateforme de Santé Numérique
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // --- RENDER AUTHENTICATED SCREENS ---
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="animate-spin mx-auto text-primary mb-4" size={48} />
+          <p className="text-slate-600 font-medium">Chargement...</p>
+        </div>
+      </div>
+    );
+  }
+
+  const role = userProfile?.user.role;
+
+  return (
+    <Layout
+      userRole={role as UserRole || null}
+      onLogout={handleLogout}
+      activeTab={activeTab}
+      setActiveTab={setActiveTab}
+    >
+      {/* PATIENT VIEWS */}
+      {(role === 'patient' || role === 'user') && (
+        <>
+          {activeTab === 'summary' && userProfile && (
+            <PatientSummary
+              user={userProfile.user}
+              patient={userProfile.patient}
+              medicalRecords={medicalRecords}
+            />
+          )}
+          {activeTab === 'history' && (
+            <PatientHistory medicalRecords={medicalRecords} />
+          )}
+          {activeTab === 'access' && (
+            <PatientAccess token={token || ''} />
+          )}
+          {activeTab === 'profile' && userProfile && (
+            <PatientProfileView
+              user={userProfile.user}
+              patient={userProfile.patient}
+            />
+          )}
+        </>
+      )}
+
+      {/* DOCTOR VIEWS */}
+      {role === 'doctor' && (
+        <>
+          {activeTab === 'patients' && (
+            <DoctorPatientList token={token || ''} />
+          )}
+          {activeTab === 'consultations' && (
+            <DoctorConsultation token={token || ''} />
+          )}
+        </>
+      )}
+
+      {/* LAB VIEWS */}
+      {role === 'laboratory' && (
+        <>
+          {activeTab === 'requests' && (
+            <div className="text-center p-8">
+              <ShieldCheck size={48} className="mx-auto text-accent mb-4" />
+              <h3 className="text-xl font-bold text-slate-800 mb-2">Demandes d'analyses</h3>
+              <p className="text-slate-500 text-sm">Fonctionnalité en cours de développement</p>
+            </div>
+          )}
+          {activeTab === 'results' && (
+            <div className="text-center p-8">
+              <Activity size={48} className="mx-auto text-accent mb-4" />
+              <h3 className="text-xl font-bold text-slate-800 mb-2">Résultats</h3>
+              <p className="text-slate-500 text-sm">Fonctionnalité en cours de développement</p>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ADMIN VIEWS */}
+      {role === 'admin' && (
+        <>
+          {activeTab === 'dashboard' && (
+            <AdminDashboard token={token || ''} />
+          )}
+          {activeTab === 'validations' && (
+            <AdminValidations token={token || ''} />
+          )}
+          {activeTab === 'users' && (
+            <AdminUsersList token={token || ''} />
+          )}
+        </>
+      )}
+    </Layout>
+  );
+};
+
+export default App;
