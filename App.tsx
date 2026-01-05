@@ -93,7 +93,7 @@ const App: React.FC = () => {
         else if (targetRole === UserRole.DOCTOR && userRole === 'doctor') roleValid = true;
         else if (targetRole === UserRole.LAB && userRole === 'laboratory') roleValid = true;
 
-        if (!roleValid) throw new Error(`Accès refusé pour le portail ${targetRole}.`);
+        if (!roleValid) throw new Error(`Accès refusé.`);
 
         localStorage.setItem('token', authToken);
         setToken(authToken);
@@ -128,10 +128,10 @@ const App: React.FC = () => {
         payload.license_number = regData.licenseNumber;
       }
       await api.register(payload);
-      setSuccessMsg("Compte créé ! Veuillez vous connecter.");
+      setSuccessMsg("Compte créé !");
       setAuthStep('login');
     } catch (err: any) {
-      setError(err.message || "Erreur d'inscription.");
+      setError(err.message || "Erreur.");
     } finally {
       setLoading(false);
     }
@@ -147,11 +147,11 @@ const App: React.FC = () => {
   // --- RENDER UNAUTHENTICATED ---
   if (!token || !userProfile) {
     return (
-      <div className="min-h-screen bg-app dark:bg-slate-950 flex flex-col items-center justify-center p-6 transition-colors duration-500 overflow-y-auto">
+      <div className="min-h-screen bg-app dark:bg-[#0a0118] flex flex-col items-center justify-center p-6 transition-colors duration-500 overflow-y-auto">
         
         {/* Toggle Dark Mode */}
         <button onClick={() => setDarkMode(!darkMode)} className="absolute top-6 right-6 p-3 glass rounded-2xl shadow-xl z-20">
-          {darkMode ? <Activity className="text-yellow-400" size={20} /> : <Activity className="text-brand-600" size={20} />}
+          {darkMode ? <Activity className="text-yellow-400" size={20} /> : <Activity className="text-[#8b5cf6]" size={20} />}
         </button>
 
         <div className="w-full max-w-lg">
@@ -161,7 +161,7 @@ const App: React.FC = () => {
               <Activity className="text-white" size={40} />
             </div>
             <h1 className="text-4xl font-black text-gradient tracking-tighter">TOHPITOH</h1>
-            <p className="text-slate-400 text-[10px] font-bold uppercase tracking-[0.3em] mt-2">Digital Health Portal</p>
+            <p className="text-slate-400 text-[10px] font-bold uppercase tracking-[0.3em] mt-2 text-center">Digital Health Platform</p>
           </div>
 
           {/* STEP 1: BENTO SELECTION */}
@@ -172,7 +172,7 @@ const App: React.FC = () => {
                   <button onClick={() => selectRole(UserRole.PATIENT)} className="bento-item">
                     <div className="bento-icon"><UserIcon size={24} /></div>
                     <span className="font-bold">Patient</span>
-                    <span className="text-[10px] opacity-40">Dossier médical</span>
+                    <span className="text-[10px] opacity-40">Mon dossier</span>
                   </button>
                   <button onClick={() => selectRole(UserRole.DOCTOR)} className="bento-item">
                     <div className="bento-icon"><Stethoscope size={24} /></div>
@@ -181,13 +181,13 @@ const App: React.FC = () => {
                   </button>
                   <button onClick={() => selectRole(UserRole.LAB)} className="bento-item">
                     <div className="bento-icon"><FlaskConical size={24} /></div>
-                    <span className="font-bold">Laboratoire</span>
+                    <span className="font-bold">Labo</span>
                     <span className="text-[10px] opacity-40">Analyses</span>
                   </button>
                   <button onClick={() => selectRole(UserRole.ADMIN)} className="bento-item">
                     <div className="bento-icon"><ShieldAlert size={24} /></div>
                     <span className="font-bold">Admin</span>
-                    <span className="text-[10px] opacity-40">Gestion</span>
+                    <span className="text-[10px] opacity-40">Système</span>
                   </button>
                </div>
             </div>
@@ -196,28 +196,24 @@ const App: React.FC = () => {
           {/* STEP 2: LOGIN / REGISTER */}
           {(authStep === 'login' || authStep === 'register') && targetRole && (
             <div className="glass rounded-[2.5rem] p-8 shadow-2xl relative animate-fade-in">
-              <button onClick={() => setAuthStep('role-selection')} className="absolute top-6 left-6 text-slate-400 hover:text-brand-500">
+              <button onClick={() => setAuthStep('role-selection')} className="absolute top-6 left-6 text-slate-400 hover:text-[#8b5cf6]">
                 <ChevronLeft size={24} />
               </button>
 
-              <div className="text-center mb-8">
+              <div className="text-center mb-8 pt-4">
                 <h2 className="text-2xl font-black uppercase tracking-tight dark:text-white">Portail {targetRole}</h2>
-                <p className="text-xs text-slate-500 font-medium mt-1">{authStep === 'login' ? 'Heureux de vous revoir' : 'Rejoindre la plateforme'}</p>
               </div>
-
-              {error && <div className="mb-4 p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 text-xs font-bold text-center">{error}</div>}
-              {successMsg && <div className="mb-4 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 text-xs font-bold text-center">{successMsg}</div>}
 
               {authStep === 'login' ? (
                 <form onSubmit={handleLogin} className="space-y-4">
                   <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} 
-                    placeholder="Email" className="w-full glass border-none rounded-2xl px-5 py-4 focus:ring-2 focus:ring-brand-500 outline-none" />
+                    placeholder="Email" className="w-full glass border-none rounded-2xl px-5 py-4 focus:ring-2 focus:ring-[#8b5cf6] outline-none" />
                   <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} 
-                    placeholder="Mot de passe" className="w-full glass border-none rounded-2xl px-5 py-4 focus:ring-2 focus:ring-brand-500 outline-none" />
-                  <button type="submit" disabled={loading} className="w-full gradient-brand text-white font-bold py-4 rounded-2xl shadow-xl active:scale-95 transition flex justify-center">
-                    {loading ? <Loader2 className="animate-spin" /> : "Accéder à l'espace"}
+                    placeholder="Mot de passe" className="w-full glass border-none rounded-2xl px-5 py-4 focus:ring-2 focus:ring-[#8b5cf6] outline-none" />
+                  <button type="submit" disabled={loading} className="w-full gradient-brand text-white font-bold py-4 rounded-2xl shadow-xl active:scale-95 transition">
+                    {loading ? <Loader2 className="animate-spin mx-auto" /> : "Accéder à l'espace"}
                   </button>
-                  <button type="button" onClick={() => setAuthStep('register')} className="w-full text-center text-xs font-bold text-slate-400 py-2">Pas encore de compte ? Créer un compte</button>
+                  <button type="button" onClick={() => setAuthStep('register')} className="w-full text-center text-xs font-bold text-slate-400 py-2">Créer un compte</button>
                 </form>
               ) : (
                 <form onSubmit={handleRegister} className="space-y-4 max-h-[50vh] overflow-y-auto px-1 pr-2 no-scrollbar">
@@ -227,42 +223,19 @@ const App: React.FC = () => {
                   </div>
                   <input type="email" placeholder="Email" required className="w-full glass border-none rounded-2xl px-4 py-3 text-sm" onChange={(e) => setEmail(e.target.value)} />
                   <input type="password" placeholder="Mot de passe" required className="w-full glass border-none rounded-2xl px-4 py-3 text-sm" onChange={(e) => setPassword(e.target.value)} />
-                  <input type="tel" placeholder="Téléphone" required className="w-full glass border-none rounded-2xl px-4 py-3 text-sm" onChange={(e) => setRegData({...regData, phone: e.target.value})} />
                   
-                  {targetRole === UserRole.PATIENT && (
-                    <div className="space-y-3 p-4 bg-brand-500/5 rounded-2xl">
-                      <label className="text-[10px] font-black uppercase text-brand-500">Profil Médical</label>
-                      <input type="date" required className="w-full glass border-none rounded-xl px-4 py-2 text-sm" onChange={(e) => setRegData({...regData, dob: e.target.value})} />
-                      <select className="w-full glass border-none rounded-xl px-4 py-2 text-sm" onChange={(e) => setRegData({...regData, gender: e.target.value})}>
-                        <option value="M">Masculin</option>
-                        <option value="F">Féminin</option>
-                      </select>
-                    </div>
-                  )}
-
-                  {(targetRole === UserRole.DOCTOR || targetRole === UserRole.LAB) && (
-                    <div className="space-y-3 p-4 bg-cyan/5 rounded-2xl border border-cyan/10">
-                      <label className="text-[10px] font-black uppercase text-cyan">Accréditation</label>
-                      <input type="text" placeholder="N° de Licence" required className="w-full glass border-none rounded-xl px-4 py-2 text-sm" onChange={(e) => setRegData({...regData, licenseNumber: e.target.value})} />
-                      {targetRole === UserRole.DOCTOR && (
-                        <div className="grid grid-cols-2 gap-2">
-                          <input type="text" placeholder="Spécialité" className="glass border-none rounded-xl px-4 py-2 text-sm" onChange={(e) => setRegData({...regData, specialty: e.target.value})} />
-                          <input type="text" placeholder="Hôpital" className="glass border-none rounded-xl px-4 py-2 text-sm" onChange={(e) => setRegData({...regData, hospital: e.target.value})} />
-                        </div>
-                      )}
-                    </div>
-                  )}
-
                   <button type="submit" disabled={loading} className="w-full gradient-brand text-white font-bold py-4 rounded-2xl shadow-xl">
-                    {loading ? <Loader2 className="animate-spin mx-auto" /> : "Finaliser l'inscription"}
+                    {loading ? <Loader2 className="animate-spin mx-auto" /> : "S'inscrire"}
                   </button>
                 </form>
               )}
             </div>
           )}
 
-          <footer className="mt-12 text-center opacity-30">
-            <p className="text-[10px] font-bold uppercase tracking-widest">© 2025 TOHPITOH Ecosystem</p>
+          <footer className="mt-12 text-center opacity-40">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">
+              © 2025 TOHPITOH • Conçu par Imelda
+            </p>
           </footer>
         </div>
       </div>
@@ -270,14 +243,6 @@ const App: React.FC = () => {
   }
 
   // --- RENDER AUTHENTICATED ---
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-app dark:bg-slate-950 flex items-center justify-center">
-        <Loader2 className="animate-spin text-brand-500" size={48} />
-      </div>
-    );
-  }
-
   return (
     <Layout 
       userRole={userProfile.user.role as UserRole} 
